@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="MobileOptimized" content="width">
+  <meta name="HandheldFriendly" content="true">
+  <meta name="viewport" content="width=device-width">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prospect Park Trees</title>
+  <script src="https://d3js.org/d3.v6.min.js" charset="utf-8"></script>
+  <script src="https://d3js.org/topojson.v0.min.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background-color: #111;
+    }
+
+    #wrap {
+      width: 100%;
+      display: flex;
+    }
+
+    #left-panel {
+      width: 350px;
+      z-index: 99;
+    }
+
+    #map-container {
+      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    #title {
+      font-family: 'Libre Baskerville', serif;
+      padding: 20px;
+      color: #fff;
+      font-size: 50px;
+      width: 280px;
+    }
+
+    #button-group {
+      font-family: 'Libre Baskerville', serif;
+      padding-right: 10px;
+      margin: 0;
+      text-align: right;
+      color: #fff;
+      z-index: 100;
+    }
+
+    #button-group p {
+      padding: 0;
+      margin-top: 0;
+    }
+
+    button {
+      padding: 8px 12px;
+      background-color: #fff;
+      border: 0;
+      border-radius: 4px;
+      color: #333;
+      margin-right: 6px;
+    }
+
+    button.active {
+      background-color: #799159;
+      color: #fff;
+    }
+
+    #park {
+      fill: #222;
+    }
+
+    #parkdetail {
+      fill: none;
+      stroke: #aaa;
+      stroke-width: .8;
+    }
+
+    #paths {
+      fill: none;
+      stroke: #ccc;
+      stroke-width: .8;
+    }
+
+    .water {
+      fill: #01001a;
+    }
+
+    .tooltip {
+      position: absolute;
+      padding: 15px;
+      font: 12px sans-serif;
+      background: #000;
+      color: #fff;
+      border: 0px;
+      border-radius: 2px;
+      pointer-events: none;
+      opacity: 0.8;
+      visibility: hidden;
+      line-height: 155%;
+      z-index: 110;
+    }
+
+    #legendcontainer {
+      width: 400px;
+      position: absolute;
+      overflow: scroll;
+    }
+
+    #legend {
+      top: 300px;
+      left: 40px;
+      width: 400px;
+      position: absolute;
+      overflow: scroll;
+    }
+
+    #legend text {
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #map-container {
+      z-index: 0;
+    }
+
+    #showhide {
+      position: absolute;
+      bottom: 0px;
+      left: 0px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
+      padding: 5px 10px;
+      width: 100px;
+      height: 20px;
+      color: #fff;
+      background-color: #333;
+    }
+
+    .hidden {
+      visibility: hidden;
+    }
+
+    @media screen and (max-width: 515px) {
+      #button-group {
+        text-align: left;
+      }
+
+      #legend {
+        height: 264px !important;
+        left: 10px;
+        width: 200px !important
+      }
+
+      #mobile-note {
+        width: 100%;
+        background-color: #fff;
+        color: #333;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1111;
+        font-family: Arial, Helvetica, sans-serif;
+        font-style: italic;
+        padding: 3px;
+      }
+
+      #button-group {
+        position: absolute;
+        bottom: 0;
+        left: 20px;
+      }
+
+      #button-group p {
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+
+      #left-panel {
+        width: 0px;
+      }
+
+      #showhide {
+        bottom: 60px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="mobile-note">Best viewed on a desktop browser.</div>
+  <div id="wrap">
+    <div id="left-panel">
+      <div id="title">Prospect Park Trees</div>
+      <div id="button-group">
+        <p>Color trees by:</p>
+        <button id="species">Species</button>
+        <button id="genus" class="active">Genus</button>
+        <button id="family">Family</button>
+        <button id="order">Order</button>
+      </div>
+      <div id="showhide">Show Legend</div>
+      <div id="legend" class="hidden">
+      </div>
+    </div>
+    <div id="map-container">
+    </div>
+  </div>
+  <script>
+    const isMobile = window.matchMedia("only screen and (max-width: 480px)");
+
+    isMobile.matches ? $('#mobile-note').css('display', 'block !important') : ''
+
+    const width = window.innerWidth,
+      height = window.innerHeight;
+
+    const container = d3.select("#map-container")
+
+    const projection = d3.geoMercator()
+      .center([-73.967, 40.663])
+      .scale(2200000)
+      .translate([(width) / 2.15, (height) / 2]);
+
+    const path = d3.geoPath()
+      .projection(projection);
+
+    colors = ["#063533", "#087955", "#116268", "#165899", "#328136", "#369451", "#379793", "#415405", "#415977", "#425531", "#604640", "#657226", "#719743", "#763638", "#830739", "#848972", "#941666", "#975496", "#981046", "#003F19", "#01A410", "#0383B3", "#03D4A9", "#04142F", "#048FAA", "#04F2FB", "#05ACD6", "#0619F1", "#078BB3", "#08789A", "#09588E", "#0A033C", "#0A8DBC", "#0C0B97", "#0C5F97", "#0C943D", "#0FB286", "#1134AF", "#117DBD", "#125A65", "#13FEF6", "#1489F8", "#14A6D1", "#165D57", "#1703CA", "#1782C7", "#19D014", "#19ED11", "#1A7D62", "#1AE923", "#1C4DB2", "#1D95FB", "#1F14A9", "#1FA1F9", "#2010BC", "#2166F5", "#21A35D", "#251D9D", "#268CD1", "#26EF6E", "#2733AD", "#282EB5", "#284AFF", "#289EF3", "#28CF6F", "#292B86", "#2AD8C8", "#2CB495", "#2CF0E1", "#2E08F6", "#2E92DF", "#2EF01F", "#2F534A", "#30699E", "#3243B4", "#36055C", "#37E37D", "#37E8DD", "#394C72", "#3A3B75", "#3B8973", "#3B9ED8", "#3BC33C", "#3D72DE", "#3EC089", "#3F5530", "#40E7F8", "#432CE1", "#4410BD", "#45B719", "#46A784", "#46FCF7", "#47B5FF", "#4AE03D", "#4BC922", "#4C54B9", "#4CF626", "#4D3A1C", "#4EA83D", "#50A356", "#5229FE", "#52B3B0", "#530F75", "#54EAB2", "#57CEDB", "#5925DA", "#5A2C7A", "#5A616D", "#5D46FD", "#5D4F59", "#5DC058", "#5EE099", "#5F7EB6", "#60CCAC", "#60D50E", "#61D00D", "#62018F", "#6298C9", "#62E4AC", "#63634F", "#6437C4", "#66A2F8", "#66E13B", "#66EA24", "#66FF05", "#674C59", "#683DE0", "#69CDFC", "#69D74C", "#6A8A71", "#6A8DDE", "#6ADEC9", "#6AF806", "#6B00F3", "#6BB7C2", "#6BFD52", "#6CA4C2", "#6DF1CC", "#6DF79A", "#6E5BBE", "#6F061F", "#6FDF72", "#703FA9", "#72BD6D", "#7454D8", "#757FEC", "#759B0B", "#76F86B", "#78BBDB", "#7B5516", "#7C4C05", "#7D3260", "#7F51BB", "#7FA211", "#7FBB75", "#8113CE", "#8227A2", "#84A178", "#8566D7", "#85A030", "#85BA59", "#86D11B", "#86D532", "#87BECE", "#87E2F2", "#88E169", "#8AB82D", "#8B9704", "#8CB6DD", "#8E3698", "#8E774D", "#8EAABE", "#8ED901", "#8FD6EA", "#9105FC", "#9213A9", "#927F85", "#92E27D", "#94E85E", "#95AC95", "#96A7BD", "#9721AF", "#9803A0", "#98322A", "#98F8B7", "#98FC2E", "#99C6E7", "#99C7A1", "#9AA444", "#9BF005", "#9C4E27", "#9C9E37", "#9CD0D4", "#9D0708", "#9D0F69", "#9D5C88", "#9DF0DE", "#A09057", "#A0EF1A", "#A1A9CD", "#A1DF6B", "#A28549", "#A28C0C", "#A46179", "#A4CDB6", "#A4F829", "#A5DD05", "#A6F375", "#A6FF69", "#A727D0", "#A8ABD2", "#A96357", "#AE039B", "#AE7566"]
+
+    let data1 = d3.json("parkbg.json")
+    let data2 = d3.json("parkdetail.json")
+    let data3 = d3.json("paths.json")
+    let data4 = d3.json("water.json")
+    let data5 = d3.csv("trees.csv")
+    Promise.all([data1, data2, data3, data4, data5]).then(buildMap)
+
+    function buildMap(values) {
+      const parkbg = values[0]
+      const parkdeets = values[1]
+      const paths = values[2]
+      const water = values[3]
+      const trees = values[4]
+
+      const map = container.append("svg")
+        .attr("id", "map")
+        .style("width", width + "px")
+        .style("height", height + "px")
+
+      const g = map.append('g')
+
+      const zoom = d3.zoom()
+        .on("zoom", zoomed);
+
+      const initialTransform = d3.zoomIdentity
+        .translate(0, 0)
+        .scale(1);
+
+      map
+        .call(zoom) // uncomment to enlable free zooming
+        .call(zoom.transform, initialTransform);
+
+      const parkArea = g.append('g')
+        .attr('id', 'park')
+        .selectAll(".park")
+        .data(parkbg.features)
+        .enter().append("path")
+        .attr("class", d => 'park ' + d.properties.name)
+        .attr("d", path)
+
+      const parkDetail = g.append('g')
+        .attr('id', 'parkdetail')
+        .selectAll(".park")
+        .data(parkdeets.features)
+        .enter().append("path")
+        .attr("class", d => 'park ' + d.properties.name)
+        .attr("d", path)
+
+      const parkWater = g.append('g')
+        .attr('id', 'parkwater')
+        .selectAll(".park")
+        .data(water.features)
+        .enter().append("path")
+        .attr("class", d => 'water  ' + d.properties.name)
+        .attr("d", path)
+
+      const parkRoutes = g.append("g")
+        .attr("id", "paths")
+        .selectAll(".path")
+        .data(paths.features)
+        .enter().append("path")
+        .attr('class', 'path')
+        .attr("d", path);
+
+      const species = d3.group(trees, d => d.species)
+      const treeSpecies = Array.from(species.keys());
+
+      const commonNames = d3.group(trees, d => d.common)
+      const treeCommonNames = Array.from(commonNames.keys());
+      treeCommonNames.unshift("Japanese Holly")
+      const treeCommonNamesSorted = Array.from(commonNames.keys());
+      treeCommonNamesSorted.sort()
+      //(Japanese Holly is the common name for both Ilex crenata and Ilex opaca - insert here so that array length matches the species array)
+
+      //210
+      let speciesCommon = []
+      treeCommonNames.forEach(function (d, i) {
+        speciesCommon.push(d + ' (' + treeSpecies[i] + ')')
+      })
+      speciesCommon.sort()
+
+      //89
+      const genera = d3.group(trees, d => d.genus)
+      const treeGenera = Array.from(genera.keys());
+      treeGenera.sort()
+
+      //44
+      const families = d3.group(trees, d => d.family)
+      const treeFamilies = Array.from(families.keys());
+      treeFamilies.sort()
+
+      //22
+      const orders = d3.group(trees, d => d.order)
+      const treeOrders = Array.from(orders.keys());
+      treeOrders.sort()
+
+      const parkTrees = g.append("g")
+        .attr("id", "trees")
+        .selectAll(".tree")
+        .data(trees)
+        .enter().append("circle")
+        .attr('class', 'tree')
+        .on("mouseover", (event, d) => {
+          let tooltip_str = d.common + "<br/>species: " + d.species +
+            "<br/>genus: " + d.genus + '<br/>family: ' + d.family
+          tooltip.html(tooltip_str)
+            .style("visibility", "visible");
+        })
+        .on("mousemove", (event, d) => {
+          tooltip.style("top", event.pageY - (tooltip.node().clientHeight + 5) + "px")
+            .style("left", event.pageX - (tooltip.node().clientWidth / 2.0) + "px");
+        })
+        .on("mouseout", (event, d) => tooltip.style("visibility", "hidden"))
+
+
+      let tooltip = d3.select("body").append("div")
+        .attr("class", "tooltip");
+
+      // dbh = diameter at breast height
+
+      fillTrees('genus')
+
+      // const legendHide = d3.select("#showhide")
+      // legendHide
+      //   .append('rect')
+      //   .attr('width', 20)
+      //   .attr('height', 95)
+      //   .attr('x', 0)
+      //   .attr('y', 0)
+      //   .attr('fill', '#444')
+      //   .attr("transform", "translate(0,70)")
+
+      // legendHide
+      //   .append('text')
+      //   .text('Show Legend')
+      //   .attr('font-family', 'Arial')
+      //   .attr('font-size', '13px')
+      //   .attr('fill', '#fff')
+      //   .attr("transform", "translate(5,75) rotate(90)")
+
+      d3.selectAll("#showhide").on('click', function (d) {
+        console.log('click')
+        if ($("#legend").hasClass('hidden')) {
+          $("#legend").removeClass('hidden')
+          $(this).text("Hide Legend")
+        } else {
+          $("#legend").addClass('hidden')
+          $(this).text("Show Legend")
+        }
+      })
+
+      function fillTrees(group) {
+
+        parkTrees
+          .transition()
+          .duration(0)
+          .attr("r", d => d.dbh * .08)
+          .attr("cx", d => projection([d.lon, d.lat])[0])
+          .attr("cy", d => projection([d.lon, d.lat])[1])
+          .attr('fill', (d) => {
+            let treeColorIndex = (group == 'genus') ? treeGenera.indexOf(d.genus) : (group == 'family') ? treeFamilies.indexOf(d.family) : (group == 'species') ? treeCommonNamesSorted.indexOf(d.common) : treeOrders.indexOf(d.order);
+            return (d.species == 'Stump') ? 'none' : colors[treeColorIndex]
+          })
+          .attr('stroke', d => (d.species == 'Stump') ? '#fff' : "none")
+          .attr('stroke-width', d => (d.species == 'Stump') ? 1 : 0)
+
+        let legendHeight = window.innerHeight - 350;
+        d3.select("#legend").style('height', legendHeight + 'px')
+        const legendcontainer = d3.select('#legend').append('svg')
+          .attr('id', 'legendcontainer')
+          .attr('height', d => {
+            let containerHeight = (group == 'genus') ? '1800px' : (group == 'family') ? '1000px' : (group == 'species') ? '4300px' : '500px'
+            return containerHeight
+          })
+
+        d3.selectAll('.legend').remove()
+
+        const legend = legendcontainer.append('g')
+          .attr('class', 'legend')
+          .attr("transform", "translate(0,10)")
+          .style('opacity', 1)
+          .attr('id', 'map-legend')
+
+        let legendData = (group == 'genus') ? treeGenera : (group == 'family') ? treeFamilies : (group == 'species') ? speciesCommon : treeOrders;
+
+        const legendGroups = legend
+          .selectAll(".legendGroup")
+          .data(legendData)
+
+        const enterGroups = legendGroups
+          .enter()
+          .append("g")
+          .attr('id', d => d)
+          .attr("class", "legendGroup active")
+
+        legendGroups
+          .exit()
+          .remove();
+
+        enterGroups.append("text")
+          .attr('class', 'legend-text')
+          .attr('font-size', 13)
+          .attr('fill', '#ccc')
+          .attr("x", 30)
+          .transition()
+          .duration(0)
+          .text(d => d)
+          .attr("y", (d, i) => 5 + i * 20);
+
+        enterGroups
+          .append("circle")
+          .attr('r', '5')
+          .attr("cx", 15)
+          .attr("class", d => d + ' legend-circ')
+          .transition()
+          .duration(0)
+          .attr("cy", (d, i) => i * 20)
+          .attr('fill', d => {
+            let index = legendData.indexOf(d)
+            return (d == 'Stump') ? 'none' : colors[index]
+          })
+          .attr('stroke', d => {
+            let index = legendData.indexOf(d)
+            return (d == 'Stump') ? "#fff" : "none"
+          })
+
+
+        enterGroups.exit()
+        // .on('click', function () {
+
+        //   let index = legend_names.indexOf($(this).attr('id'))
+
+        //   let itemText, inactiveIndex
+
+        //   if (d3.select(this).classed("active")) {
+        //     d3.select(this).classed("active", false);
+        //     d3.select(this).classed("inactive", true);
+        //     d3.select(this).select('circle').attr('fill', '#fff')
+        //     if (index == 0) {
+        //       itemText = "Collaborating with Local Governments and Communities to Reduce Jail Populations"
+        //       inactiveInitiatives.push(itemText)
+        //     } else {
+        //       itemText = $(this).text()
+        //       inactiveInitiatives.push(itemText)
+        //     }
+        //   } else {
+        //     d3.select(this).classed("active", true);
+        //     d3.select(this).classed("inactive", false);
+        //     d3.select(this).select('circle').attr("fill", initiative_colors[index])
+        //     if (index == 0) {
+        //       inactiveIndex = inactiveInitiatives.indexOf("Collaborating with Local Governments and Communities to Reduce Jail Populations");
+        //       inactiveInitiatives.splice(inactiveIndex, 1);
+        //     } else {
+        //       itemText = $(this).text()
+        //       inactiveIndex = inactiveInitiatives.indexOf(itemText);
+        //       inactiveInitiatives.splice(inactiveIndex, 1);
+        //     }
+        //   }
+      }
+
+      parkTrees.exit()
+
+      d3.selectAll('button').on('click', function (d) {
+        d3.selectAll('button').style('background', '#fff').style('color', '#000')
+        let buttonText = d3.select(this).text().toLowerCase()
+        d3.select(this).style('background', '#799159').style('color', '#fff')
+        fillTrees(buttonText)
+      })
+
+      function zoomed(event) {
+        let transform = event.transform;
+
+        g.style("stroke-width", 1.5 / transform.k + "px");
+        g.attr("transform", transform);
+      }
+    }
+
+
+  </script>
+
+</html>
