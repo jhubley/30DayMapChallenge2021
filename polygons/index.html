@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="MobileOptimized" content="width">
+    <meta name="HandheldFriendly" content="true">
+    <meta name="viewport" content="width=device-width">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estimated Walking Distance to Park Entrance (meters)</title>
+    <script src="https://d3js.org/d3.v6.min.js" charset="utf-8"></script>
+    <script src="https://d3js.org/topojson.v0.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #efe8db;
+        }
+
+        @font-face {
+            font-family: 'newakedemo';
+            src: url('font/newakefont-demo-webfont.woff2') format('woff2'),
+                url('font/newakefont-demo-webfont.woff') format('woff');
+            font-weight: normal;
+            font-style: normal;
+
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 15px;
+            font: 12px sans-serif;
+            background: #000;
+            color: #fff;
+            border: 0px;
+            border-radius: 2px;
+            pointer-events: none;
+            opacity: 0.8;
+            visibility: hidden;
+            line-height: 155%;
+            z-index: 110;
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            height: 160px;
+            width: 260px;
+            padding: 15px;
+            border-radius: 3px;
+            background-color: #fff;
+        }
+
+        #cityList {
+            font-size: 25px;
+            padding: 10px 15px;
+            font-family: 'newakedemo';
+            text-transform: uppercase;
+            background-color: #efe8db;
+
+        }
+
+        h1 {
+            font-family: 'Courier New', Courier, monospace;
+
+            font-size: 18px;
+        }
+
+        #data-note {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+        }
+
+        a {
+            color: #246375;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>How far is the nearest park entrance?</h1>
+    <div>
+        <select id="cityList"></select>
+    </div>
+
+    <div id="viz"></div>
+    <svg id="legend"></svg>
+    <div id="data-note">Data from the <a href="https://www.epa.gov/enviroatlas/data-download-step-2">EPA's
+            EnviroAtlas</a></div>
+    <script>
+
+        const cities = ["Austin, TX", "Baltimore, MD", "Birmingham, AL", "Brownsville, TX", "Chicago, IL", "Cleveland, OH", "Des Moines, IA", "Durham, NC", "Fresno, CA", "Green Bay, WI", "Los Angeles, CA", "Memphis, TN", "Milwaukee, WI", "Minneapolis / St.Paul, MN", "New Bedford, MA", "New Haven, CT", "New York, NY", "Paterson, NJ", "Philadelphia, PA ", "Phoenix, AZ", "Pittsburgh, PA", "Portland, ME", "Portland, OR", "Salt Lake City, UT", "Sonoma County, CA ", "St. Louis, MO", "Tampa, FL", "Virginia Beach/ Williamsburg, VA", "Washington, DC", "Woodbine, IA"]
+
+        const entranceProximity = [250, 500, 750, 1000, 2000, 3000, 4000, 5000]
+        const colors = ['#ff3300', '#fff000', '#9ada10', '#02b829', '#00791a', '#00420e', '#002307', '#000900']
+
+        const legenditem = d3.select('#legend')
+            .selectAll('.legenditem')
+            .data(entranceProximity)
+            .enter()
+            .append('g')
+            .attr('class', 'legenditem')
+
+        legenditem.append('rect')
+            .attr('width', 15)
+            .attr('height', 15)
+            .attr('x', 0)
+            .attr('y', (d, i) => i * 20)
+            .attr('fill', d => {
+                let proxIndex = entranceProximity.indexOf(d)
+                return colors[proxIndex]
+            })
+
+        legenditem.append('text')
+            .attr('x', 20)
+            .attr('y', (d, i) => (i * 20) + 13.5)
+            .attr('font-family', 'Arial')
+            .text(d => d + ' meters to a park entrance')
+
+        d3.csv('cities.csv').then(function (data) {
+
+            const cities = data.map(l => l.city);
+
+            cities.forEach(function (item) {
+                console.log('item', item)
+                const optionObj = document.createElement("option");
+                if (item == "New York, NY") {
+                    optionObj.setAttribute("selected", 'selected');
+                }
+                optionObj.textContent = item;
+                document.getElementById("cityList").appendChild(optionObj);
+            });
+
+            $('#cityList').on("change", function () {
+                let cityFile = 'data/' + d3.select(this).node().value.replace(/\s|\(|\)|\'|\/|\,|\./g, "").toLowerCase() + '.json'
+                const groupcities = d3.group(data, d => d.city)
+                const allcities = Array.from(groupcities.keys())
+                let cityIndex = allcities.indexOf(d3.select(this).node().value)
+                let cityCenter = [+data[cityIndex].centroid_lon, +data[cityIndex].centroid_lat]
+                let cityScale = +data[cityIndex].scale
+
+                createMap(cityFile, cityCenter, cityScale)
+            })
+
+        });
+
+
+        createMap('data/newyorkny.json', [-73.9708, 40.65295], 99000)
+
+        function createMap(cityFile, cityCenter, cityScale) {
+
+            d3.select('#map').remove()
+            const width = window.innerWidth,
+                height = window.innerHeight;
+
+            const projection = d3.geoMercator()
+                .center(cityCenter)
+                .scale(cityScale)
+                .translate([(width) / 2, (height) / 2]);
+
+            const path = d3.geoPath()
+                .projection(projection);
+
+            d3.json(cityFile).then(function (proximity) {
+
+                const container = d3.select("#viz")
+
+                const map = container.append("svg")
+                    .attr("id", "map")
+                    .style("width", width + "px")
+                    .style("height", height + "px")
+
+                const zoom = d3.zoom()
+                    .on("zoom", zoomed);
+
+                const initialTransform = d3.zoomIdentity
+                    .translate(0, 0)
+                    .scale(1);
+
+                map
+                    // .call(zoom) // uncomment to enlable free zooming
+                    .call(zoom.transform, initialTransform);
+
+
+                const parkProx = map.append('g')
+                    .attr('id', 'park-proximity')
+                    .selectAll(".prox")
+                    .data(proximity.features)
+                    .enter().append("path")
+                    .attr("class", d => 'prox ' + d.properties.ParkProxD)
+                    .attr("d", path)
+                    .attr('fill', d => {
+                        if (d.properties.ParkProxD == 250) { return '#ff3300' }
+                        else if (d.properties.ParkProxD == 500) { return '#fff000' }
+                        else if (d.properties.ParkProxD == 750) { return '#9ada10' }
+                        else if (d.properties.ParkProxD == 1000) { return '#02b829' }
+                        else if (d.properties.ParkProxD == 2000) { return '#00791a' }
+                        else if (d.properties.ParkProxD == 3000) { return '#00420e' }
+                        else if (d.properties.ParkProxD == 4000) { return '#002307' }
+                        else if (d.properties.ParkProxD == 5000) { return '#000900' }
+                        else { return '#efe8db' }
+                    })
+                    .attr('stroke', '#efe8db')
+                    .attr('stroke-width', .5)
+                    .on("mouseover", (event, d) => {
+                        let tooltip_str = d.properties.ParkProxD + ' meters from a park entrance'
+                        tooltip.html(tooltip_str)
+                            .style("visibility", "visible");
+                    })
+                    .on("mousemove", (event, d) => {
+                        tooltip.style("top", event.pageY - (tooltip.node().clientHeight + 5) + "px")
+                            .style("left", event.pageX - (tooltip.node().clientWidth / 2.0) + "px");
+                    })
+                    .on("mouseout", (event, d) => tooltip.style("visibility", "hidden"))
+
+
+                let tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip");
+
+                function zoomed(event) {
+                    let transform = event.transform;
+
+                    map.style("stroke-width", 1.5 / transform.k + "px");
+                    map.attr("transform", transform);
+                }
+
+            })
+        }
+
+        // 250
+        // 500
+        // 750
+        // 1000
+        // 2000
+        // 3000
+        // 4000
+    </script>
+</body>
+
+</html>
