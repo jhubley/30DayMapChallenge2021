@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>amenities around locations</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.3/dist/leaflet.css" />
+    <script src="https://d3js.org/d3.v6.min.js" charset="utf-8"></script>
+
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 50%;
+        }
+
+        #data {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            height: 100%;
+            width: 50%;
+        }
+
+        #overpass-api-controls {
+            padding: 10px;
+            background-color: rgb(255, 255, 255);
+        }
+
+        #overpass-api-controls a {
+            display: inline;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="data">
+        <pre><div id="content"></div></pre>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.0.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <script src="https://unpkg.com/osmtogeojson@2.2.12/osmtogeojson.js"></script>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+
+    <script>
+        var map = L.map('map').setView([40.693835909931465, -73.92970301489699], 11);
+        L.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: 'Map data &copy; <a href="http://openstreetmap.org/copyright">OpenStreetMap</a> contributors</a>'
+        }).addTo(map);
+
+        function buildOverpassApiUrl(map, overpassQuery, lat, lon) {
+            var nodeQuery = 'node[' + overpassQuery + '](around:30000,' + lat + ',' + lon + ');';
+            var wayQuery = 'way[' + overpassQuery + '](around:30000,' + lat + ',' + lon + ');';
+            var relationQuery = 'relation[' + overpassQuery + '](around:30000,' + lat + ',' + lon + ');';
+            var query = '?data=[out:json][timeout:15];(' + wayQuery + ');out body geom;';
+            var baseUrl = 'http://overpass-api.de/api/interpreter';
+            var resultUrl = baseUrl + query;
+            return resultUrl;
+        }
+
+        function buildMap(wwname, bookings) {
+            let lat = 40.693835909931465;
+            let lon = -73.92970301489699;
+            var queryTextfieldValue = "amenity=prison"
+            var overpassApiUrl = buildOverpassApiUrl(map, queryTextfieldValue, lat, lon);
+
+            $.get(overpassApiUrl, function (osmDataAsJson) {
+
+                var itemsNotFormatted = osmDataAsJson.elements;
+                var itemsFormatted = [];
+
+                // format the data
+                itemsNotFormatted.forEach((item) => {
+                    //console.log('item', item)
+                    itemsFormatted.push({
+                        // wwname: wwname,
+                        // bookings: bookings,
+                        type: item.type.replace(/,/g, ''), // remove commas to avoid errors,
+                        id: item.id,
+                        lat: item.lat,
+                        lon: item.lon,
+                        amenity: item.tags.amenity,
+                        cuisine: item.tags.cuisine,
+                        name: item.tags.name,
+                        geolat: item.geometry[0].lat,
+                        geolon: item.geometry[0].lon
+
+                        // street: item.tags['addr:street'],
+                        // city: item.tags['addr:city'],
+                        // state: item.tags['addr:state']
+                    });
+                });
+
+                console.log('items', itemsFormatted)
+
+                let cuisines = d3.group(itemsFormatted, d => d.cuisine)
+                let cuisineList = Array.from(cuisines.keys())
+                console.log('cuisines', cuisineList)
+
+
+                var info = JSON.stringify(itemsFormatted, null, 2);
+                $("#content").html(info)
+
+                //exportCSVFile(itemsFormatted); // call the exportCSVFile() function to process the JSON and trigger the download
+
+                var resultAsGeojson = osmtogeojson(osmDataAsJson);
+                var resultLayer = L.geoJson(resultAsGeojson, {
+                    style: function (feature) {
+                        return { color: "#ff0000" };
+                    },
+                    filter: function (feature, layer) {
+                        var isPolygon = (feature.geometry) && (feature.geometry.type !== undefined) && (feature.geometry.type === "Polygon");
+                        if (isPolygon) {
+                            feature.geometry.type = "Point";
+                            var polygonCenter = L.latLngBounds(feature.geometry.coordinates[0]).getCenter();
+                            feature.geometry.coordinates = [polygonCenter.lat, polygonCenter.lng];
+                        }
+                        return true;
+                    },
+                    onEachFeature: function (feature, layer) {
+                        var popupContent = "";
+                        popupContent = popupContent + "<dt>@id</dt><dd>" + feature.properties.type + "/" + feature.properties.id + "</dd>";
+                        var keys = Object.keys(feature.properties.tags);
+                        keys.forEach(function (key) {
+                            popupContent = popupContent + "<dt>" + key + "</dt><dd>" + feature.properties.tags[key] + "</dd>";
+                        });
+                        popupContent = popupContent + "</dl>"
+                        layer.bindPopup(popupContent);
+                    }
+                }).addTo(map);
+            });
+        };
+
+        d3.csv('nyc.csv', function (data) {
+            data.forEach(function (d) {
+                wwname = d.wwname;
+                bookings = +d.bookings;
+                // grind out all csvs:
+                buildMap(wwname, bookings)
+                // then cat *.csv >anydamnthingichoose.csv
+                // then do nesting
+            })
+        })
+
+        function convertToCSV(objArray) {
+
+            var array = typeof objArray != 'object' ? JSON.parse(objArray) : objArray;
+            var str = '';
+
+            for (var i = 0; i < array.length; i++) {
+                var line = '';
+                for (var index in array[i]) {
+                    if (line != '') line += ','
+                    line += array[i][index];
+                }
+                str += line + '\r\n';
+            }
+            return str;
+        }
+
+        function exportCSVFile(items) {
+            fileTitle = "data"
+
+            var jsonObject = JSON.stringify(items);
+
+            var csv = this.convertToCSV(jsonObject);
+
+            var exportedFilenmae = fileTitle + '.csv' || 'export.csv';
+
+            var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            if (navigator.msSaveBlob) { // IE 10+
+                navigator.msSaveBlob(blob, exportedFilenmae);
+            } else {
+                var link = document.createElement("a");
+                if (link.download !== undefined) { // feature detection
+                    // Browsers that support HTML5 download attribute
+                    var url = URL.createObjectURL(blob);
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", exportedFilenmae);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            }
+        }
+
+    </script>
+</body>
+
+</html>
